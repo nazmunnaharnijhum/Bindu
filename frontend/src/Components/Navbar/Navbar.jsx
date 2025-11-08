@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react"; 
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Logo from "../../assets/logo.png";
@@ -144,6 +144,8 @@ export default function Navbar() {
             }}
           />
           <NavLink to="/blood-bank" label="Blood Bank" />
+          {/* NEW: Blood Donor page link */}
+          <NavLink to="/blood-donors" label="Blood Donor" />
         </div>
 
         {/* Auth Buttons */}
@@ -241,6 +243,13 @@ export default function Navbar() {
               label="Blood Bank"
               onClick={() => setMenuOpen(false)}
             />
+            {/* NEW: Blood Donor mobile link */}
+            <NavLink
+              to="/blood-donors"
+              label="Blood Donor"
+              onClick={() => setMenuOpen(false)}
+            />
+
             <div className="border-t border-[#C7B7A3] pt-4 mt-4 flex flex-col gap-2">
               {!loggedInUser ? (
                 <>
