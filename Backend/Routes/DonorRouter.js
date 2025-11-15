@@ -19,15 +19,18 @@ const parseBool = (v) => {
 router.post("/", async (req, res) => {
   try {
     const {
-      name,
-      email,
-      phone,
-      bloodGroup,
-      age,
-      district,
-      available = true,
-      notes,
-    } = req.body;
+  name,
+  email,
+  phone,
+  bloodGroup,
+  age,
+  district,
+  available = true,
+  notes,
+  lastDonationDate,
+  donationCount = 0,
+} = req.body;
+
 
     if (!name || !phone || !bloodGroup) {
       return res
@@ -39,16 +42,19 @@ router.post("/", async (req, res) => {
     const userId = req.user?.id || req.user?._id || null;
 
     const donor = new Donor({
-      userId,
-      name,
-      email: email || null,
-      phone,
-      bloodGroup,
-      age: age || null,
-      district: district || null,
-      available: available === undefined ? true : !!available,
-      notes: notes || null,
-    });
+  userId,
+  name,
+  email: email || null,
+  phone,
+  bloodGroup,
+  age: age || null,
+  district: district || null,
+  available,
+  notes: notes || null,
+  lastDonationDate: lastDonationDate || null,
+  donationCount,
+});
+
 
     await donor.save();
 
