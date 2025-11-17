@@ -13,12 +13,24 @@ const createDonor = async (req, res) => {
       age,
       district,
       available = true,
+      lastDonationDate,
+      donationCount = 0,
+      notes
     } = req.body;
 
     if (!name || !phone || !bloodGroup) {
       return res
         .status(400)
         .json({ success: false, message: "name, phone and bloodGroup required" });
+    }
+
+    // Auto calculate next eligible date
+    let nextEligibleDate = null;
+    if (lastDonationDate) {
+      const last = new Date(lastDonationDate);
+      const next = new Date(last);
+      next.setMonth(next.getMonth() + 3);
+      nextEligibleDate = next;
     }
 
     const newDonor = new Donor({
@@ -30,6 +42,10 @@ const createDonor = async (req, res) => {
       age: age || null,
       district: district || null,
       available,
+      notes: notes || null,
+      lastDonationDate: lastDonationDate || null,
+      donationCount,
+      nextEligibleDate,
     });
 
     await newDonor.save();
@@ -44,23 +60,35 @@ const createDonor = async (req, res) => {
 const listDonors = async (req, res) => {
   try {
     const { bloodGroup, district, available, q, page = 1, limit = 20 } = req.query;
+
     const filter = {};
     if (bloodGroup) filter.bloodGroup = bloodGroup;
     if (district) filter.district = { $regex: new RegExp(district, "i") };
-    if (available !== undefined) filter.available = available === "true" || available === true;
+    if (available !== undefined)
+      filter.available = available === "true" || available === true;
+
     if (q) {
       filter.$or = [
         { name: { $regex: q, $options: "i" } },
         { phone: { $regex: q, $options: "i" } },
         { email: { $regex: q, $options: "i" } },
+        { district: { $regex: q, $options: "i" } },
       ];
     }
 
     const skip = (Number(page) - 1) * Number(limit);
-    const donors = await Donor.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit));
+    const donors = await Donor.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+
     const total = await Donor.countDocuments(filter);
 
-    res.json({ success: true, donors, meta: { total, page: Number(page), limit: Number(limit) } });
+    res.json({
+      success: true,
+      donors,
+      meta: { total, page: Number(page), limit: Number(limit) },
+    });
   } catch (err) {
     console.error("listDonors:", err);
     res.status(500).json({ success: false, message: "Server error" });
@@ -71,7 +99,11 @@ const getDonor = async (req, res) => {
   try {
     const { id } = req.params;
     const donor = await Donor.findById(id);
-    if (!donor) return res.status(404).json({ success: false, message: "Donor not found" });
+    if (!donor)
+      return res
+        .status(404)
+        .json({ success: false, message: "Donor not found" });
+
     res.json({ success: true, donor });
   } catch (err) {
     console.error("getDonor:", err);
@@ -83,8 +115,21 @@ const updateDonor = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
+
+    // Recalculate next eligible date if last donation is updated
+    if (updates.lastDonationDate) {
+      const last = new Date(updates.lastDonationDate);
+      const next = new Date(last);
+      next.setMonth(next.getMonth() + 3);
+      updates.nextEligibleDate = next;
+    }
+
     const donor = await Donor.findByIdAndUpdate(id, updates, { new: true });
-    if (!donor) return res.status(404).json({ success: false, message: "Donor not found" });
+    if (!donor)
+      return res
+        .status(404)
+        .json({ success: false, message: "Donor not found" });
+
     res.json({ success: true, donor });
   } catch (err) {
     console.error("updateDonor:", err);

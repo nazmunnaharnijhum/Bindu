@@ -30,16 +30,18 @@ export default function BloodDonors() {
   const [loading, setLoading] = useState(false);
 
   // form (registration)
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    bloodGroup: "A+",
-    phone: "",
-    location: "",
-    age: "",
-    lastDonationDate: "",
-    available: true,
-  });
+ const [form, setForm] = useState({
+  name: "",
+  email: "",
+  bloodGroup: "A+",
+  phone: "",
+  location: "",
+  age: "",
+  lastDonationDate: "",
+  available: true,
+  donationCount: 0,   // NEW
+});
+
 
   // filter UI values
   const [filters, setFilters] = useState({
@@ -183,15 +185,17 @@ export default function BloodDonors() {
     }
 
     const payload = {
-      name: form.name,
-      email: form.email || null,
-      phone: form.phone,
-      bloodGroup: form.bloodGroup,
-      age: form.age ? Number(form.age) : null,
-      district: form.location || null,
-      lastDonationDate: form.lastDonationDate || null,
-      available,
-    };
+  name: form.name,
+  email: form.email || null,
+  phone: form.phone,
+  bloodGroup: form.bloodGroup,
+  age: form.age ? Number(form.age) : null,
+  district: form.location || null,
+  lastDonationDate: form.lastDonationDate || null,
+  available,
+  donationCount: Number(form.donationCount || 0),   // NEW
+};
+
 
     try {
       const res = await axios.post(API_BASE, payload);
@@ -199,15 +203,17 @@ export default function BloodDonors() {
         toast.success("Donor registered successfully");
         // reset form
         setForm({
-          name: "",
-          email: "",
-          bloodGroup: "A+",
-          phone: "",
-          location: "",
-          age: "",
-          lastDonationDate: "",
-          available: true,
-        });
+  name: "",
+  email: "",
+  bloodGroup: "A+",
+  phone: "",
+  location: "",
+  age: "",
+  lastDonationDate: "",
+  available: true,
+  donationCount: 0,   
+});
+
         // fetch first page to show newest (server emits and socket will also add; merge prevents duplicates)
         // Keep user on first page so they see the newly registered donors
         setMeta(prev => ({ ...prev, page: 1 }));
@@ -339,6 +345,19 @@ export default function BloodDonors() {
             <input name="lastDonationDate" type="date" value={form.lastDonationDate} onChange={handleChange}
               className="p-3 rounded bg-transparent border border-[#C7B7A3] text-[#E8D8C4]" />
 
+            <input
+  name="donationCount"
+  type="number"
+  min="0"
+  required
+  placeholder="How many times do you donated?"
+  value={form.donationCount === 0 ? "" : form.donationCount}
+  onChange={handleChange}
+  className="p-3 rounded bg-transparent border border-[#C7B7A3] text-[#E8D8C4]"
+/>
+
+
+
             <label className="flex items-center gap-2 text-sm text-[#E8D8C4]">
               <input type="checkbox" name="available" checked={form.available} onChange={handleChange} />
               Available for donation
@@ -399,9 +418,11 @@ export default function BloodDonors() {
 
           {renderedDonors.map(d => {
             const badge =
-              (d.donationCount || 0) >= 15 ? "💎 Platinum Donor" :
-              (d.donationCount || 0) >= 10 ? "🥇 Gold Donor" :
-              (d.donationCount || 0) >= 5 ? "🥈 Silver Donor" : null;
+  (d.donationCount || 0) >= 15 ? <span className="badge-animate">💎 Platinum Donor</span> :
+  (d.donationCount || 0) >= 10 ? <span className="badge-animate">🥇 Gold Donor</span> :
+  (d.donationCount || 0) >= 5 ? <span className="badge-animate">🥈 Silver Donor</span> :
+  null;
+
 
             return (
               <div key={d._id || d.id} className="p-4 rounded-xl bg-[#561C24]/60 border border-[#C7B7A3]">
