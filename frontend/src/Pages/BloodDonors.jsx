@@ -4,8 +4,9 @@ import axios from "axios";
 import { io } from "socket.io-client";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import Navbar from "../components/Navbar/Navbar.jsx";
-import Footer from "../components/Footer/Footer.jsx";
+import Navbar from "../Components/Navbar/Navbar.jsx";
+import Footer from "../Components/Footer/Footer.jsx";
+import { useNavigate } from "react-router-dom";
 
 const API_BASE = "http://localhost:8080/api/donors";
 const SOCKET_URL = "http://localhost:8080";
@@ -308,6 +309,8 @@ export default function BloodDonors() {
     return buttons;
   };
 
+const navigate = useNavigate();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#8A0302] via-[#6A1E55] to-[#2C0E37] text-[#E8D8C4]">
       {/* <Navbar /> */}
@@ -440,8 +443,24 @@ export default function BloodDonors() {
                         Last donated: {fmtDate(d.lastDonationDate)}<br />
                         Next eligible: {d.nextEligibleDate ? fmtDate(d.nextEligibleDate) : "—"}
                       </div>
+
+                      
+
                     )}
+
+                    <button
+  onClick={() => {
+    // pass the other user's id and name as query params
+    navigate(`/chat?userId=${d._id}&name=${encodeURIComponent(d.name)}`);
+  }}
+  className="mt-2 px-3 py-1 rounded bg-[#E8D8C4] text-[#561C24] text-sm"
+>
+  Message
+</button>
+
                   </div>
+
+                  
 
                   <div className="text-right">
                     <div className={`px-3 py-1 rounded ${d.available ? "bg-green-600" : "bg-gray-500"} text-white text-sm`}>
