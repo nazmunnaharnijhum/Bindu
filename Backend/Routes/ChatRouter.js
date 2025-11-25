@@ -4,7 +4,7 @@ const router = express.Router();
 const ChatController = require("../Controllers/ChatController");
 const jwt = require("jsonwebtoken");
 
-// Simple auth middleware using JWT
+// auth middleware (reads Bearer token)
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) return res.status(401).json({ message: "No token provided" });

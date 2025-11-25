@@ -4,9 +4,8 @@ const User = require("../Models/User");
 const mongoose = require("mongoose");
 
 /**
- * REST: send message (authenticated)
+ * POST /api/chats/send
  * body: { receiverId, content, meta }
- * Saves message and emits to recipient + sender via req.io if available.
  */
 const sendMessageRest = async (req, res) => {
   try {
@@ -34,18 +33,33 @@ const sendMessageRest = async (req, res) => {
 
     await message.save();
 
-    // Emit using socket if available (index.js attaches io to req)
+    // populate sender's name/email for notifications
+    await message.populate({ path: "senderId", select: "name email" });
+
+    const emitted = {
+      _id: message._id,
+      conversationId: message.conversationId,
+      senderId: String(message.senderId._id || message.senderId),
+      receiverId: String(message.receiverId),
+      content: message.content,
+      meta: message.meta,
+      read: message.read,
+      createdAt: message.createdAt,
+      senderName: message.senderId?.name || null,
+    };
+
+    // emit using socket (attached to req in index.js)
     try {
       if (req.io) {
-        req.io.to(`user_${receiverId}`).emit("newMessage", message);
-        req.io.to(`user_${senderId}`).emit("newMessage", message);
-        req.io.to(`conv_${convId}`).emit("newMessage", message);
+        req.io.to(`user_${receiverId}`).emit("newMessage", emitted);
+        req.io.to(`user_${senderId}`).emit("newMessage", emitted);
+        req.io.to(`conv_${convId}`).emit("newMessage", emitted);
       }
     } catch (e) {
       console.warn("ChatController: emit failed", e.message);
     }
 
-    res.json({ success: true, message });
+    res.json({ success: true, message: emitted });
   } catch (err) {
     console.error("sendMessageRest:", err);
     res.status(500).json({ success: false, message: "Server error" });
@@ -53,20 +67,17 @@ const sendMessageRest = async (req, res) => {
 };
 
 /**
- * GET /conversations
- * returns a list of conversation summaries for the authenticated user:
- * { _id: convId, other: { _id, name, email }, lastMessage, updatedAt }
+ * GET /api/chats/conversations
+ * returns conversation summaries with unread counts and last message
  */
 const getConversations = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId) return res.status(401).json({ success: false, message: "Not authenticated" });
 
-    // ensure userId is a valid ObjectId
-const uid = new mongoose.Types.ObjectId(String(userId));
+    const uid = new mongoose.Types.ObjectId(String(userId));
 
-
-    // Aggregate last message per conversation involving this user
+    // Aggregate last message and unread counts per conversation
     const conversations = await Message.aggregate([
       {
         $match: {
@@ -79,13 +90,21 @@ const uid = new mongoose.Types.ObjectId(String(userId));
           _id: "$conversationId",
           lastMessage: { $first: "$$ROOT" },
           updatedAt: { $first: "$createdAt" },
+          unreadCount: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ["$receiverId", uid] }, { $eq: ["$read", false] }] },
+                1,
+                0,
+              ],
+            },
+          },
         },
       },
       { $sort: { "lastMessage.createdAt": -1 } },
       { $limit: 200 },
     ]);
 
-    // For each conversation, compute "other" user
     const results = await Promise.all(
       conversations.map(async (c) => {
         const lastMsg = c.lastMessage;
@@ -94,20 +113,23 @@ const uid = new mongoose.Types.ObjectId(String(userId));
 
         let otherUser = null;
         if (mongoose.Types.ObjectId.isValid(otherId)) {
-          otherUser = await User.findById(otherId, "name email");
+          otherUser = await User.findById(otherId, "name email").lean();
         }
 
         return {
           _id: c._id,
-          other: otherUser ? { _id: otherUser._id, name: otherUser.name, email: otherUser.email } : { _id: otherId, name: "User", email: null },
+          other: otherUser
+            ? { _id: otherUser._id.toString(), name: otherUser.name, email: otherUser.email }
+            : { _id: otherId, name: "User", email: null },
           lastMessage: {
             content: lastMsg.content,
-            senderId: lastMsg.senderId,
-            receiverId: lastMsg.receiverId,
+            senderId: String(lastMsg.senderId),
+            receiverId: String(lastMsg.receiverId),
             createdAt: lastMsg.createdAt,
             read: lastMsg.read,
           },
           updatedAt: c.updatedAt || lastMsg.createdAt,
+          unreadCount: c.unreadCount || 0,
         };
       })
     );
@@ -120,8 +142,7 @@ const uid = new mongoose.Types.ObjectId(String(userId));
 };
 
 /**
- * GET /messages/:userId
- * Get all messages between authenticated user and :userId (sorted oldest->newest)
+ * GET /api/chats/messages/:userId
  */
 const getMessages = async (req, res) => {
   try {

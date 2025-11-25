@@ -12,8 +12,11 @@ import ForgotPassword from "./Pages/ForgotPassword.jsx";
 import ResetPassword from "./Pages/ResetPassword.jsx";
 import BloodDonors from "./Pages/BloodDonors.jsx";
 import Chat from "./Pages/Chat.jsx";
+import BloodBank from "./Pages/BloodBank.jsx";
 
-import { AuthProvider } from "./context/AuthContext";   // ✅ ADD THIS
+
+import { AuthProvider } from "./context/AuthContext";   
+
 
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
@@ -24,6 +27,7 @@ const router = createBrowserRouter([
   { path: "/forgot-password", element: <ForgotPassword /> },
   { path: "/reset-password/:token", element: <ResetPassword /> },
   { path: "/blood-donors", element: <BloodDonors /> },
+  { path: "/blood-bank", element: <BloodBank /> },
   { path: "/chat", element: <Chat /> },  // Chat wrapper
 ]);
 

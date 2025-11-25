@@ -1,66 +1,21 @@
-// frontend/src/Pages/ChatPage.jsx
 import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { initSocket, getSocket } from "../utils/socket";
 import Footer from "../Components/Footer/Footer.jsx";
-import Navbar from "../Components/Navbar/Navbar.jsx";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "react-toastify";
-import { useLocation } from "react-router-dom";
 
 const API = "http://localhost:8080/api";
 
 export default function ChatPage() {
   const { token, user } = useAuth();
   const [conversations, setConversations] = useState([]);
-  const [activeOther, setActiveOther] = useState(null); // other user object
+  const [activeOther, setActiveOther] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+
   const socketRef = useRef(null);
-  const location = useLocation();
-
-  useEffect(() => {
-  if (!token) return;
-
-  const s = initSocket("http://localhost:8080", token);
-  socketRef.current = s;
-
-  const onNewMessage = (msg) => {
-    const convId = [msg.senderId, msg.receiverId].sort().join("_");
-    const localId = getLocalUserId();
-    const activeConvId = activeOther
-      ? [String(activeOther._id), localId].sort().join("_")
-      : null;
-
-    if (convId === activeConvId) {
-      setMessages(prev => [...prev, msg]);
-    } else {
-      toast.info("New message received");
-      fetchConversations();
-    }
-  };
-
-  s.on("newMessage", onNewMessage);
-
-  return () => {
-    s.off("newMessage", onNewMessage);
-  };
-}, [token]);   // ❗ ONLY token
-
-
-  useEffect(() => {
-    if (!token) return;
-    fetchConversations();
-    // if url contains ?userId=..., open that conversation
-    const params = new URLSearchParams(location.search);
-    const userId = params.get("userId");
-    const name = params.get("name");
-    if (userId) {
-      // create lightweight other user (will be replaced if conversation list has that user)
-      openConversationWith({ _id: userId, name: name || "User" });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  const messagesEndRef = useRef(null);
 
   function getLocalUserId() {
     if (!token) return null;
@@ -72,107 +27,244 @@ export default function ChatPage() {
     }
   }
 
+  // Init socket once
+  useEffect(() => {
+    if (!token) return;
+
+    const s = initSocket("http://localhost:8080", token);
+    socketRef.current = s;
+
+    const onNewMessage = (msg) => {
+      const localId = getLocalUserId();
+      const convId = [msg.senderId, msg.receiverId].sort().join("_");
+
+      const activeConvId = activeOther
+        ? [String(activeOther._id), localId].sort().join("_")
+        : null;
+
+      if (activeConvId && convId === activeConvId) {
+        setMessages((prev) => [...prev, msg]);
+        fetchConversations();
+      } else {
+        fetchConversations();
+
+        const senderName = msg.senderName || "User";
+        toast.info(
+          <div
+            className="cursor-pointer"
+            onClick={() => {
+              const other = { _id: msg.senderId, name: senderName };
+              openConversationWith(other);
+            }}
+          >
+            <strong>{senderName}</strong>: {String(msg.content).slice(0, 50)}
+          </div>,
+          { autoClose: 4000 }
+        );
+      }
+    };
+
+    s.on("newMessage", onNewMessage);
+    return () => s.off("newMessage", onNewMessage);
+  }, [token, activeOther]);
+
+  useEffect(() => {
+    if (token) fetchConversations();
+  }, [token]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
   async function fetchConversations() {
     try {
-      const res = await axios.get(`${API}/chats/conversations`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.data?.success) setConversations(res.data.conversations || []);
+      const res = await axios.get(`${API}/chats/conversations`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.data?.success) setConversations(res.data.conversations);
     } catch (err) {
-      console.error("fetchConversations:", err);
+      console.error("fetchConversations", err);
     }
   }
 
   async function openConversationWith(other) {
     setActiveOther(other);
     setMessages([]);
+
     try {
-      const res = await axios.get(`${API}/chats/messages/${other._id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API}/chats/messages/${other._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       if (res.data?.success) {
-        setMessages(res.data.messages || []);
+        setMessages(res.data.messages);
+        fetchConversations();
       }
     } catch (err) {
-      console.error("getMessages:", err);
+      console.error("getMessages", err);
     }
-    // ask socket to join conv room (optional)
-    const convId = [String(getLocalUserId()), String(other._id)].sort().join("_");
+
+    const convId = [String(getLocalUserId()), String(other._id)]
+      .sort()
+      .join("_");
+
     const s = getSocket();
-    if (s && s.emit) s.emit("joinConversation", { conversationId: convId });
+    if (s) s.emit("joinConversation", { conversationId: convId });
   }
 
   async function handleSend() {
     if (!activeOther || !text.trim()) return;
+
     try {
-      const res = await axios.post(`${API}/chats/send`, {
-        receiverId: activeOther._id,
-        content: text.trim()
-      }, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.post(
+        `${API}/chats/send`,
+        {
+          receiverId: activeOther._id,
+          content: text.trim(),
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
       if (res.data?.success) {
-        // server will emit newMessage (we'll also append to local view for immediate feedback)
-        setMessages(prev => [...prev, res.data.message]);
+        setMessages((prev) => [...prev, res.data.message]);
         setText("");
-      } else {
-        toast.error(res.data?.message || "Send failed");
+        fetchConversations();
       }
     } catch (err) {
-      console.error("sendMessage error:", err);
-      toast.error("Error sending message");
+      console.error("sendMessage err", err);
+      toast.error("Failed to send message");
     }
   }
 
   return (
-    <div>
-      {/* <Navbar /> */}
-      <div className="max-w-6xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6 min-h-[70vh]">
-        {/* Conversations */}
-        <div className="col-span-1 bg-[#561C24]/70 p-3 rounded border border-[#C7B7A3] overflow-auto">
-          <h3 className="font-bold mb-2">Conversations</h3>
-          <div className="space-y-2">
-            {conversations.map(c => (
-              <div key={c._id} className="p-2 rounded hover:bg-[#E8D8C4]/10 cursor-pointer"
-                onClick={() => openConversationWith(c.other)}>
-                <div className="flex justify-between">
-                  <div>
-                    <div className="font-semibold">{c.other?.name}</div>
-                    <div className="text-xs text-[#C7B7A3]">{c.lastMessage?.content?.slice(0,80)}</div>
+    <div className="flex min-h-[80vh] h-full max-w-6xl mx-auto mt-4 border rounded overflow-hidden">
+      {/* LEFT SIDEBAR */}
+      <div className="w-80 bg-[#561C24] text-[#E8D8C4] p-4 overflow-auto">
+        <h2 className="text-xl font-bold mb-4">Conversations</h2>
+
+        {conversations.length === 0 && (
+          <div className="text-sm text-[#C7B7A3]">No conversations yet</div>
+        )}
+
+        <div className="space-y-2">
+          {conversations.map((c) => {
+            console.log("CONVERSATION OBJECT:", c);
+
+            const isActive =
+              activeOther &&
+              String(activeOther._id) === String(c.other._id);
+
+            return (
+              <div
+                key={c._id}
+                onClick={() => openConversationWith(c.other)}
+                className={`p-3 rounded cursor-pointer flex justify-between hover:bg-[#E8D8C4]/10 ${
+                  isActive ? "bg-[#E8D8C4]/10" : ""
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between">
+                    <div className="font-semibold truncate">
+                      {c.other?.name || "User"}
+                    </div>
+                    <div className="text-xs text-[#C7B7A3] ml-2">
+                      {new Date(c.updatedAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </div>
                   </div>
-                  <div className="text-xs">{new Date(c.updatedAt).toLocaleString()}</div>
+
+                  <div className="text-sm text-[#C7B7A3] truncate max-w-[180px]">
+                    <span
+                      className={
+                        c.unreadCount > 0 ? "font-bold text-white" : ""
+                      }
+                    >
+                      {c.lastMessage?.content || ""}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Chat window */}
-        <div className="col-span-2 bg-[#561C24]/70 p-4 rounded border border-[#C7B7A3] flex flex-col">
-          {!activeOther ? (
-            <div className="flex-1 flex items-center justify-center text-[#C7B7A3]">Select a conversation or click Message on a donor</div>
-          ) : (
-            <>
-              <div className="mb-3">
-                <div className="font-bold text-lg">{activeOther.name}</div>
-                {activeOther.email && (
-  <div className="text-xs text-[#C7B7A3]">{activeOther.email}</div>
-)}
-
-              </div>
-
-              <div className="flex-1 overflow-auto space-y-3 p-2" style={{minHeight:200}}>
-                {messages.map(m => (
-                  <div key={m._id || m.createdAt} className={`max-w-[80%] p-2 rounded ${String(m.senderId) === String(getLocalUserId()) ? "ml-auto bg-[#E8D8C4] text-[#561C24]" : "bg-[#6A1E55] text-[#E8D8C4]"}`}>
-                    <div className="text-sm">{m.content}</div>
-                    <div className="text-xs text-gray-300 mt-1">{new Date(m.createdAt).toLocaleString()}</div>
+                {c.unreadCount > 0 && (
+                  <div className="ml-2">
+                    <span className="bg-red-600 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full">
+                      {c.unreadCount > 99 ? "99+" : c.unreadCount}
+                    </span>
                   </div>
-                ))}
+                )}
               </div>
-
-              <div className="mt-3 flex gap-2">
-                <input value={text} onChange={e => setText(e.target.value)} className="flex-1 p-2 rounded bg-transparent border border-[#C7B7A3]" placeholder="Type a message..." />
-                <button onClick={handleSend} className="px-4 py-2 rounded bg-[#E8D8C4] text-[#561C24] font-semibold">Send</button>
-              </div>
-            </>
-          )}
+            );
+          })}
         </div>
       </div>
-      <Footer />
+
+      {/* RIGHT CHAT WINDOW */}
+      <div className="flex-1 bg-[#2C0E37] text-[#E8D8C4] p-4 flex flex-col">
+        {/* Chat header + messages */}
+        {activeOther ? (
+          <>
+            <h3 className="text-lg font-bold mb-1">{activeOther.name}</h3>
+
+            <div className="flex-1 overflow-auto mb-4 space-y-3 px-2">
+              {messages.map((m) => {
+                const mine = String(m.senderId) === String(getLocalUserId());
+                return (
+                  <div
+                    key={m._id || m.createdAt}
+                    className={`max-w-[70%] p-3 rounded break-words leading-relaxed shadow-md ${
+                      mine
+                        ? "ml-auto bg-[#E8D8C4] text-[#561C24] rounded-br-none"
+                        : "mr-auto bg-[#561C24]/80 text-[#E8D8C4] rounded-bl-none"
+                    }`}
+                  >
+                    <div>{m.content}</div>
+                    <div className="text-xs text-[#C7B7A3] mt-1">
+                      {new Date(m.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-[#C7B7A3]">
+            Select a conversation
+          </div>
+        )}
+
+        {/* INPUT BAR — ALWAYS VISIBLE */}
+        <div className="flex gap-2 mt-2">
+          <input
+            value={text}
+            disabled={!activeOther}
+            onChange={(e) => setText(e.target.value)}
+            className={`flex-1 p-2 rounded border ${
+              activeOther
+                ? "bg-[#561C24]/60 border-[#C7B7A3]"
+                : "bg-gray-700 border-gray-500 text-gray-400 cursor-not-allowed"
+            }`}
+            placeholder={
+              activeOther
+                ? "Type a message..."
+                : "Select a conversation to start chatting"
+            }
+            onKeyDown={(e) => e.key === "Enter" && activeOther && handleSend()}
+          />
+          <button
+            disabled={!activeOther}
+            onClick={handleSend}
+            className={`px-4 py-2 rounded transition ${
+              activeOther
+                ? "bg-[#E8D8C4] text-[#561C24] hover:bg-[#e4ccb0]"
+                : "bg-gray-600 text-gray-400 cursor-not-allowed"
+            }`}
+          >
+            Send
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -7,7 +7,7 @@ const messageSchema = new Schema({
   senderId: { type: Schema.Types.ObjectId, ref: "users", required: true },
   receiverId: { type: Schema.Types.ObjectId, ref: "users", required: true },
   content: { type: String, required: true },
-  meta: { type: Schema.Types.Mixed, default: {} }, // attachments/metadata
+  meta: { type: Schema.Types.Mixed, default: {} },
   read: { type: Boolean, default: false },
 }, { timestamps: true });
 
